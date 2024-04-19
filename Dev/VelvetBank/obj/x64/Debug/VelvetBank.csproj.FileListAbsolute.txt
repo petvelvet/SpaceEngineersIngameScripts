@@ -1,0 +1,4 @@
+J:\SpaceEngineersScriptStuff\VelvetBank\obj\x64\Debug\VelvetBank.csproj.AssemblyReference.cache
+J:\SpaceEngineersScriptStuff\VelvetBank\obj\x64\Debug\VelvetBank.csproj.SuggestedBindingRedirects.cache
+J:\SpaceEngineersScriptStuff\VelvetBank\obj\x64\Debug\VelvetBank.exe.config
+J:\SpaceEngineersScriptStuff\VelvetBank\obj\x64\Debug\VelvetBank.csproj.CoreCompileInputs.cache
