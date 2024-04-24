@@ -25,7 +25,7 @@ namespace IngameScript
 {
     partial class Program : MyGridProgram
     {
-        #region PASTE THIS INTO YOUR SCRIPT BLOCK (WITHOUT REGION MARKINGS)
+        #region PASTE THIS INTO YOUR SCRIPT BLOCK (WITHOUT REGION MARKINGS)        
         // This file contains your actual script.
         //
         // You can either keep all your code here, or you can create separate
@@ -47,20 +47,22 @@ namespace IngameScript
         //
         // to learn more about ingame scripts.
 
-        float transactionFee = 0.01f; //The fee paid to the bank during each time you buy credits (from 0 to 1)
-                                      //Keys & Tags
-        string BCKey = "MyObjectBuilder_Component/ZoneChip";
+        float transactionFee = 0.1f; //The fee paid to the bank during each time you buy credits (from 0 to 1)
+        //Keys & Tags
+        string BCKey = "MyObjectBuilder_Ingot/Gold";
         string BankCargoGroupKey = "[Bank]";
         string PersonalCargoKey = "[Input]";
         string[] StockPairNames = new string[16];
         string InfoDisplayKey = "[InfoDisplay]";
 
-        string BCSymbol = "ZC";
+        string BCSymbol = "G";
         //Lists
         Dictionary<string, string> ItemNames = new Dictionary<string, string>();
         Dictionary<string, int> ItemCounts = new Dictionary<string, int>();
         Dictionary<string, float> ItemValues = new Dictionary<string, float>();
         Dictionary<string, MyItemType> ItemTypes = new Dictionary<string, MyItemType>();
+        string SelectedItemType;
+        MyItemType SelectedStock = new MyItemType();
 
         //Blocks
         List<IMyTerminalBlock> BankContainers = new List<IMyTerminalBlock>();
@@ -71,10 +73,10 @@ namespace IngameScript
         List<IMyTextPanel> TextPanels = new List<IMyTextPanel>();
         List<IMyTextSurface> InfoDisplays = new List<IMyTextSurface>();
         string[] InfoTexts = new string[3];
-        float MinimumReserveRatio = 2f;
+        float MinimumReserveRatio = .5f;
         int BankCreditCount = 0;
-        int PersonalCreditCount = 0;
-        int MinimumStock = 1;
+        int MinimumStock = 2;
+        float DigitalBalance = 0;
 
         MyItemType MainCurrency = new MyItemType();
 
@@ -84,7 +86,6 @@ namespace IngameScript
         {
             ItemNames = new Dictionary<string, string>
 {
-    {"MyObjectBuilder_Ingot/Credits", "Bank Credits (BC)" },
     {"MyObjectBuilder_Component/BulletproofGlass", "Bulletproof Glass" },
     {"MyObjectBuilder_Component/Canvas", "Canvas" },
     {"MyObjectBuilder_Component/Computer", "Computer" },
@@ -137,47 +138,83 @@ namespace IngameScript
     {"MyObjectBuilder_ConsumableItem/Medkit", "Medkit" },
     {"MyObjectBuilder_ConsumableItem/Powerkit", "Powerkit" },
     {"MyObjectBuilder_PhysicalObject/SpaceCredit", "Space Credits (SC)" },
+    {"MyObjectBuilder_Ingot/Credits", "Moon Credits (MC)" },
+    {"MyObjectBuilder_PhysicalGunObject/AngleGrinder4Item", "Elite Grinder"},
+    {"MyObjectBuilder_PhysicalGunObject/HandDrill4Item", "Elite Hand Drill"},
+    {"MyObjectBuilder_PhysicalGunObject/Welder4Item", "Elite Welder"},
+    {"MyObjectBuilder_PhysicalGunObject/AngleGrinder3Item", "Proficient Grinder"},
+    {"MyObjectBuilder_PhysicalGunObject/HandDrill3Item", "Proficient Hand Drill"},
+    {"MyObjectBuilder_PhysicalGunObject/Welder3Item", "Proficient Welder"},
+    {"MyObjectBuilder_PhysicalGunObject/AngleGrinder2Item", "Enhanced Grinder"},
+    {"MyObjectBuilder_PhysicalGunObject/HandDrill2Item", "Enhanced Hand Drill"},
+    {"MyObjectBuilder_PhysicalGunObject/Welder2Item", "Enhanced Welder"},
+    {"MyObjectBuilder_AmmoMagazine/NATO_25x184mm", "Gatling Ammo Box"},
 };
             Echo("Searching for bank blocks...");
             IMyBlockGroup bankBlockGroup = GridTerminalSystem.GetBlockGroupWithName(BankCargoGroupKey);
             bankBlockGroup.GetBlocksOfType(BankContainers);
             BankContainers.ForEach(container => Inventories.Add(container.GetInventory()));
             Echo("Success!");
-            Echo("Searching for display blocks...");
+            Echo("Generating stock pair names...");
+            string tag = "[Stocks";
             for (int i = 0; i < StockPairNames.Length; i++)
             {
-                StockPairNames[i] = "[Stock" + (i + 1) + "]";
+                string stockIndex = tag + (i + 1) + "]";
+                Echo(stockIndex);
+                StockPairNames[i] = stockIndex;
             }
-            foreach (string stockIndex in StockPairNames)
+            Echo("Searching for display blocks...");
+            List<IMyButtonPanel> buttonPanels = new List<IMyButtonPanel>();
+            List<IMyTextPanel> textPanels = new List<IMyTextPanel>();
+            GridTerminalSystem.GetBlocksOfType<IMyButtonPanel>(buttonPanels, x => x.CubeGrid == Me.CubeGrid && x.CustomName.Contains(tag));
+            GridTerminalSystem.GetBlocksOfType<IMyTextPanel>(textPanels, x => x.CubeGrid == Me.CubeGrid && x.CustomName.Contains(tag));
+            foreach (string stockName in StockPairNames)
             {
-                IMyButtonPanel buttonPanel = GridTerminalSystem.GetBlockWithName(stockIndex) as IMyButtonPanel;
-                IMyTextPanel displayPanel = GridTerminalSystem.GetBlockWithName(stockIndex) as IMyTextPanel;
-                StockDisplays.Add(displayPanel, buttonPanel);
+                Echo($"Searching for {stockName}...");
+                IMyButtonPanel buttonPanel = buttonPanels.Find(x => x.CustomName.Contains($"{stockName}"));
+                IMyTextPanel textPanel = textPanels.Find(x => x.CustomName.Contains($"{stockName}"));
+                if (buttonPanel != null && textPanel != null)
+                {
+                    Echo($"Display and Button Panel Found");
+                    StockDisplays.Add(textPanel, buttonPanel);
+                }
             }
+
             Echo("Success!");
             Echo("Searching for Input block...");
             IMyTerminalBlock inputBlock = GridTerminalSystem.GetBlockWithName(PersonalCargoKey);
-            InputInventory = inputBlock.GetInventory();
+            List<IMyTerminalBlock> inputBlocks = new List<IMyTerminalBlock>();
+            GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(inputBlocks, iB => iB.CubeGrid == Me.CubeGrid && iB.CustomName.Contains(PersonalCargoKey));
+            InputInventory = GetBlockWithTag(PersonalCargoKey).GetInventory();
             Echo("Success!");
             Echo("Searching for Info Displays...");
-            IMyTextSurfaceProvider infoDisplay = GridTerminalSystem.GetBlockWithName(InfoDisplayKey) as IMyTextSurfaceProvider;
+            IMyTextSurfaceProvider infoDisplay = GetBlockWithTag(InfoDisplayKey) as IMyTextSurfaceProvider;
             if (infoDisplay != null)
             {
                 Echo("Info Display Block Found. Fetching text surfaces...");
-            if (infoDisplay.SurfaceCount > 0)
-            {
-                Echo("Number of text surfaces: " + infoDisplay.SurfaceCount);
-                for (int i = 0; i < infoDisplay.SurfaceCount; i++)
+                if (infoDisplay.SurfaceCount > 0)
                 {
-                    IMyTextSurface display = infoDisplay.GetSurface(i);
-                    InfoDisplays.Add(display);
-                    Echo("Info Display " + (i + 1) + " found.");
-                }
-                Echo("Success!");
+                    Echo("Number of text surfaces: " + infoDisplay.SurfaceCount);
+                    for (int i = 0; i < infoDisplay.SurfaceCount; i++)
+                    {
+                        IMyTextSurface display = infoDisplay.GetSurface(i);
+                        InfoDisplays.Add(display);
+                        Echo("Info Display " + (i + 1) + " found.");
+                    }
+                    Echo("Success!");
                 }
             }
+            SelectedItemType = BCKey;
         }
-
+        public IMyTerminalBlock GetBlockWithTag(string tag)
+        {
+            Echo($"Getting block with tag '{tag}'");
+            List<IMyTerminalBlock> myTerminalBlocks = new List<IMyTerminalBlock>();
+            GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(myTerminalBlocks, x => x.CubeGrid == Me.CubeGrid && x.CustomName.Contains(tag));
+            Echo($"Block with tag '{tag}' found.");
+            if (myTerminalBlocks.Count > 0) return myTerminalBlocks.First();
+            else return null;
+        }
         public void Main(string argument)
         {
             Echo("VelvetBank Launched: argument: " + argument);
@@ -191,12 +228,13 @@ namespace IngameScript
             // The method itself is required, but the arguments above
             // can be removed if not needed.
             Echo("Main/ResetCounts()");
-            ResetCounts();
+            Reset();
             Echo("Main/GetBlockContents(BankCargoGroupKey)");
             GetBlockContents(BankCargoGroupKey);
             Echo("Main/GetBlockContents(PersonalCargoKey)");
             GetBlockContents(PersonalCargoKey);
             Echo("Main/if (InputInventory == null)");
+            MinimumReserveRatio = ItemTypes.Count / 2;
             if (InputInventory == null)
             {
                 HandleError("NO INPUT INVENTORY");
@@ -210,8 +248,6 @@ namespace IngameScript
             }
             Echo("Main/SetItemValues()");
             SetItemValues();
-            Echo("Main/EvaluateInputStocks()");
-            EvaluateInputStocks();
             Echo("Main/if (argument != null)");
             if (argument != null)
             {
@@ -230,6 +266,7 @@ namespace IngameScript
                         if (item.Key.EndsWith(productKey))
                         {
                             productName = key;
+                            SelectedItemType = key;
                             productTitle = item.Value;
                             if (ItemCounts[productName] < MinimumStock)
                             {
@@ -242,8 +279,28 @@ namespace IngameScript
                         }
                     }
                 }
+                CashBack();
             }
-
+            Echo("Main/ResetCounts()");
+            Reset();
+            Echo("Main/GetBlockContents(BankCargoGroupKey)");
+            GetBlockContents(BankCargoGroupKey);
+            Echo("Main/GetBlockContents(PersonalCargoKey)");
+            GetBlockContents(PersonalCargoKey);
+            Echo("Main/if (InputInventory == null)");
+            if (InputInventory == null)
+            {
+                HandleError("NO INPUT INVENTORY");
+                return;
+            }
+            Echo("Main/if (BankCreditCount <= 0)");
+            if (BankCreditCount <= 0)
+            {
+                MarketCrash();
+                return;
+            }
+            Echo("Main/SetItemValues()");
+            SetItemValues();
             Echo("Main/UpdateStockDisplays()");
             InitializeStockMenus();/*
     Highest(5);
@@ -265,8 +322,7 @@ namespace IngameScript
                 int stocksPerPage = 4;
                 for (int i = 0; i < stockValues.Length; i++)
                 {
-                    stockValues[i] = $"Page {i + 1}/{stockValues.Length}:\n";
-                    stockValues[i] += $"1 {BCSymbol} Equals:\n";
+                    stockValues[i] = $"1 {ItemNames[BCKey]} =\n";
                     for (int j = 0; j < stocksPerPage; j++)
                     {
                         int index = i * stocksPerPage + j;
@@ -274,13 +330,17 @@ namespace IngameScript
                         stockValues[i] += stockRows[index];
                     }
                 }
-                for (int i = 0; i < TextPanels.Count; i++)
+                int stockMenuId = 0;
+                foreach (var stockMenu in StockDisplays)
                 {
-                    IMyTextPanel displayPanel = TextPanels[i];
-                    if (displayPanel != null)
-                    {
-                        displayPanel.WriteText(stockValues[i]);
-                    }
+                    IMyTextPanel stockDisplay = stockMenu.Key;
+                    IMyButtonPanel stockButtonPanel = stockMenu.Value;
+                    stockDisplay.ClearImagesFromSelection();
+                    stockDisplay.WriteText(stockValues[stockMenuId]);
+                    stockButtonPanel.AnyoneCanUse = true;
+
+
+                    stockMenuId++;
                 }
             }
             Echo("Stock Displays Updated.");
@@ -288,19 +348,32 @@ namespace IngameScript
         }
         void UpdateMainDisplay()
         {
-            InfoTexts[0] = "";
-            Echo("Updating Main Display...");
-            InfoTexts[0] = "Input Container Contents:\n";
-            MyFixedPoint goodsWorth = 0;
-            foreach (MyInventoryItem inputItem in InputInventoryItems)
+            for (int i = 0; i < InfoDisplays.Count; i++)
             {
-                string key = inputItem.Type.ToString();
-                goodsWorth += inputItem.Amount * ItemValues[key];
-                InfoTexts[0] += ItemNames[key] + ": " + inputItem.Amount + "\n";
-                InfoTexts[0] += "Total Value: " + goodsWorth + " " + BCSymbol + "\n";
+                Echo($"Resetting MenuDisplay {i + 1}");
+                InfoTexts[i] = "";
+
+                Echo($"MenuDisplay{i + 1} reset.");
+
+                Echo("Rendering Buy Menu Screen");
+                Dictionary<string, int> wallet = new Dictionary<string, int>(InventoryItemCounts(InputInventoryItems));
+                string[] rows = new string[wallet.Count];
+                int index = 0;
+                foreach (var item in wallet)
+                {
+                    string key = item.Key;
+                    rows[index] = $"{item.Value}x {ItemNames[key]} = {(ItemValues[key]) * item.Value}\n";
+                    index++;
+                }
+                InfoTexts[i] += "[1] = sell; [2] = refresh;\n";
+                foreach (string row in rows)
+                {
+                    InfoTexts[i] += row;
+                }
+                InfoDisplays[i].WriteText(InfoTexts[i]);
             }
-            InfoDisplays[0].WriteText(InfoTexts[0]);
-            Echo("Main Display updated.");
+
+
         }
         void MarketCrash()
         {
@@ -320,27 +393,19 @@ namespace IngameScript
             }
             int count = ItemCounts[BCKey];
             BankCreditCount = count;
-            Echo("Credit Count Set: " + BankCreditCount  + " " + BCSymbol);
+            Echo("Credit Count Set: " + BankCreditCount + " " + BCSymbol);
         }
         void SetItemValues()
         {
             Echo("Setting Item values...");
+            Dictionary<string, int> inputItemCounts = new Dictionary<string, int>(InventoryItemCounts(InputInventoryItems));
             float cargoWorth = BankCreditCount * MinimumReserveRatio;
-            Dictionary<string, int> inputItems = new Dictionary<string, int>();
-            List<MyInventoryItem> inputInventoryItems = new List<MyInventoryItem>();
-            InputInventory.GetItems(inputInventoryItems);
-            foreach (MyInventoryItem item in inputInventoryItems)
+            
+            foreach(var item in inputItemCounts)
             {
-                string key = item.Type.ToString();
-                int value = item.Amount.ToIntSafe();
-                if (inputItems.ContainsKey(key))
-                {
-                    inputItems[key] += value;
-                }
-                else
-                {
-                    inputItems.Add(key, value);
-                }
+                string key = item.Key;
+                ItemCounts[key] += (int)(item.Value * (1+transactionFee));
+
             }
             foreach (var item in ItemCounts)
             {
@@ -348,14 +413,10 @@ namespace IngameScript
                 if (ItemValues.ContainsKey(key))
                 {
                     float itemWorth = 1;
-                    float bonusAmount = 0;
-                    if (inputItems.ContainsKey(item.Key))
-                    {
-                        bonusAmount += inputItems[item.Key];
-                    }
-                    float itemCount = (item.Value + bonusAmount);
+                    float itemCount = item.Value;
                     if (item.Key != BCKey)
                     {
+                        if (itemCount == 0) itemCount = 1;
                         itemWorth = 1 / itemCount / (ItemNames.Count()) * cargoWorth;
                     }
                     ItemValues[key] = itemWorth;
@@ -363,153 +424,152 @@ namespace IngameScript
             }
             Echo("Item values set.");
         }
-        void Sell()
+        Dictionary<string, int> InventoryItemCounts(List<MyInventoryItem> inventoryItems)
         {
-            Echo("Selling items...");
-            Dictionary<string, int> inputItemCounts = ScanInventory(InputInventory);
-            Dictionary<string, int> inputItemSellStacks = new Dictionary<string, int>();
-            int inputWorth = 0;
-            foreach(var inputItem in inputItemCounts)
-            {
-                string inputItemKey = inputItem.Key;
-                if (inputItemKey != BCKey)
-                {
-                    int sellCount = (int)((float)inputItem.Value - ((float)inputItem.Value % (ItemValues[inputItemKey] / (1 + transactionFee))));
-                    int BCPayBack = (int)(sellCount * ItemValues[inputItemKey]);
-                    inputWorth += BCPayBack;
-                    inputItemSellStacks.Add(inputItemKey, sellCount);
-                }
-            }
-            foreach (var item in InputInventoryItems)
+            Echo($"Getting item counts in inventory...");
+            Dictionary<string, int> inventoryItemCounts = new Dictionary<string, int>();
+            int i = 0;
+            foreach (MyInventoryItem item in inventoryItems)
             {
                 string key = item.Type.ToString();
-                if (inputItemSellStacks.ContainsKey(key))
+                Echo($"item {i + 1}: {key}");
+                if (ItemNames.ContainsKey(key))
                 {
-                    int sellTic = 0;
-                    float itemWorth = ItemValues[key];
-                    if (item.Amount >= inputItemSellStacks[key])
+                    if (inventoryItemCounts.ContainsKey(key))
                     {
-                        sellTic = inputItemSellStacks[key];
+                        inventoryItemCounts[key] += item.Amount.ToIntSafe();
                     }
                     else
                     {
-                        sellTic = (int)item.Amount.ToIntSafe();
+                        inventoryItemCounts[key] = item.Amount.ToIntSafe();
                     }
-                    MoveToBank(item, sellTic);
-                    inputItemSellStacks[key] -= sellTic;
+                }
+                i++;
+            }
+            return inventoryItemCounts;
+        }
+        void Sell()
+        {
+            Echo("Selling items...");
+            Dictionary<string, int> inputItemCounts = new Dictionary<string, int>(InventoryItemCounts(InputInventoryItems));
+            foreach (var item in InputInventoryItems)
+            {
+                string key = item.Type.ToString();
+                if (key != BCKey)
+                {
+                    MyFixedPoint amount = item.Amount;
+                    MoveToBank(item, amount);
                 }
             }
-            MoveFromBank(MainCurrency, inputWorth);
-            Echo("Selling items complete. Received " + $"{inputWorth} {BCSymbol}");
+            Echo("Selling items complete. Balance: " + $"{DigitalBalance} {BCSymbol}");
         }
-        void MoveToBank(MyInventoryItem item, int amount)
+        void MoveToBank(MyInventoryItem item, MyFixedPoint amount)
         {
             Echo($"Moving item {amount} units of {ItemNames[item.Type.ToString()]} to bank");
-            foreach(IMyInventory inventory in Inventories)
+            foreach (IMyInventory inventory in Inventories)
             {
-                if (inventory.CanItemsBeAdded(amount, item.Type) && InputInventory.CanTransferItemTo(inventory,item.Type))
+                if (inventory.CanItemsBeAdded(amount, item.Type) && InputInventory.CanTransferItemTo(inventory, item.Type))
                 {
                     MoveItem(inventory, InputInventory, item, amount);
+                    DigitalBalance += (float)(ItemValues[item.Type.ToString()] * amount) * (1 - transactionFee);
                 }
                 else
                 {
                     HandleError($"Cannot move item");
                 }
             }
-            Echo($"Moving item {amount} units of {ItemNames[item.Type.ToString()]} to bank");
         }
-        int MoveFromBank(MyItemType itemType, int amount)
+        void MoveFromBank(MyItemType itemType, int amount)
         {
-            Echo($"Moving item {amount} units of {ItemNames[itemType.ToString()]} from bank");
-            int transferAmount = amount;
-            while (transferAmount > 0)
+            Echo($"Moving {amount} units of {ItemNames[itemType.ToString()]} from bank");
+            MyFixedPoint totalTransferAmount = (MyFixedPoint)(amount / (1-transactionFee));
+            MyInventoryItem stock = new MyInventoryItem();
+            foreach (IMyInventory inventory in Inventories)
             {
-                MyInventoryItem stock = new MyInventoryItem();
-                foreach (IMyInventory inventory in Inventories)
+                if (totalTransferAmount <= 0 || DigitalBalance <= 0)
                 {
-                    stock = (MyInventoryItem)inventory.FindItem(itemType);
-                    if (stock == null) continue;
-                    int stockAmount = stock.Amount.ToIntSafe();
-                    if (stockAmount <= transferAmount)
-                    {
-                        transferAmount -= stockAmount;
-                    }
-                    if (InputInventory.CanItemsBeAdded(amount, itemType) && InputInventory.CanTransferItemTo(inventory, itemType))
-                    {
-                        MoveItem(InputInventory, inventory, stock, transferAmount);
-                    }
+                    Echo("Item transfer ended prematurely:");
+                    if (totalTransferAmount <= 0) Echo("Cause: Found all items");
+                    else Echo("Cause: Insufficient balance");
                 }
-                if (stock == null) break;
+                stock = (MyInventoryItem)inventory.FindItem(itemType);
+                MyFixedPoint stockAmount = stock.Amount;
+                MyFixedPoint transferAmount = stockAmount;
+                if (stockAmount > totalTransferAmount)
+                {
+                    transferAmount = totalTransferAmount;
+                }
+                if (InputInventory.CanItemsBeAdded(amount, itemType) && InputInventory.CanTransferItemTo(inventory, itemType))
+                {
+                    MoveItem(InputInventory, inventory, stock, transferAmount);
+                    DigitalBalance -= (float)(transferAmount * ItemValues[itemType.ToString()]);
+                }
+                totalTransferAmount -= transferAmount;
             }
-            return transferAmount;
         }
-        void MoveItem(IMyInventory targetInventory, IMyInventory sourceInventory, MyInventoryItem item, int amount)
+        void CashBack()
         {
+            MyFixedPoint transferAmount = (MyFixedPoint)DigitalBalance;
+            foreach (IMyInventory inventory in Inventories)
+            {
+                MyInventoryItem money = (MyInventoryItem)inventory.FindItem(MainCurrency);
+                if (money == null) continue;
+                MyFixedPoint stockAmount = money.Amount;
+                if (stockAmount < transferAmount)
+                {
+                    transferAmount = stockAmount;
+                }
+                else
+                {
+                    transferAmount = (MyFixedPoint)DigitalBalance;
+                }
+                if (InputInventory.CanItemsBeAdded(transferAmount - MinimumStock, MainCurrency) && InputInventory.CanTransferItemTo(inventory, MainCurrency))
+                {
+                    transferAmount = transferAmount < BankCreditCount - MinimumStock ? transferAmount : BankCreditCount - MinimumStock;
+                    MoveItem(InputInventory, inventory, money, transferAmount);
+                    DigitalBalance -= (float)transferAmount;
+                }
+            }
+        }
+        void MoveItem(IMyInventory targetInventory, IMyInventory sourceInventory, MyInventoryItem item, MyFixedPoint amount)
+        {
+            if ((!item.Type.ToString().Contains("Ore") && !item.Type.ToString().Contains("Ingot")) || item.Type.ToString().Contains("/Credits"))
+            {
+                amount = (int)amount;
+            }
+            Echo($"Moving Item {ItemNames[item.Type.ToString()]}, {amount} units");
             sourceInventory.TransferItemTo(targetInventory, item, amount);
-        }
-        void EvaluateInputStocks()
-        {
-            InputInventory.GetItems(InputInventoryItems);
         }
         void Buy(string itemKey)
         {
             Echo($"Buying item {ItemNames[itemKey]}");
-            MyInventoryItem myCash = (MyInventoryItem)InputInventory.FindItem(MainCurrency);
-            if (PersonalCreditCount != myCash.Amount.ToIntSafe()) PersonalCreditCount = myCash.Amount.ToIntSafe();
-            if (myCash != null && PersonalCreditCount > 0)
+            MyInventoryItem BC = (MyInventoryItem)InputInventory.FindItem(MainCurrency);
+            MoveToBank(BC, BC.Amount);
+            if (DigitalBalance > 0)
             {
-                int itemsToBuy = (int)(PersonalCreditCount / ItemValues[itemKey]);
+                int itemsToBuy = (int)(DigitalBalance / ItemValues[itemKey]);
+                Echo($"Amount to buy: {itemsToBuy}");
 
-                if (itemsToBuy <= ItemCounts[itemKey])
+                if (itemsToBuy < ItemCounts[itemKey])
                 {
-                    BuyStock(itemKey, itemsToBuy);
+                    MoveFromBank(ItemTypes[itemKey], itemsToBuy);
+                }
+                else
+                {
+                    itemsToBuy = ItemCounts[itemKey] - MinimumStock;
+                    MoveFromBank(ItemTypes[itemKey], itemsToBuy);
                 }
             }
             Echo($"Purchase Complete.");
         }
-        void BuyStock(string targetItem, int itemsToBuy)
+        void Reset()
         {
-            Echo($"Finding a stock of {ItemNames[targetItem]}");
-            List<MyInventoryItem> inventoryItems = new List<MyInventoryItem>();
-            MyInventoryItem credits = (MyInventoryItem)InputInventory.FindItem(MainCurrency);
-            MoveToBank(credits, PersonalCreditCount);
-            int AmountToAfford = (int)Math.Round((float)itemsToBuy / (1 + transactionFee));
-            float leftoverCash = 0;
-            if (ItemCounts[targetItem] >= MinimumStock)
-            {
-                foreach(IMyInventory inventory in Inventories)
-                {
-                    inventory.GetItems(inventoryItems);
-                    foreach(MyInventoryItem inventoryItem in inventoryItems)
-                    {
-                        if (inventoryItem.Type.ToString() == targetItem)
-                        {
-                            leftoverCash = MoveFromBank(inventoryItem.Type, AmountToAfford) * ItemValues[inventoryItem.Type.ToString()];
-                        }
-                    }
-                }
-            }
-            else
-            {
-                Echo("Item " + ItemNames[targetItem] + " out of stock!");
-            }
-            while (leftoverCash > 1)
-            {
-                MoveFromBank(MainCurrency, 1);
-                leftoverCash--;
-            }
-            if (leftoverCash > 0)
-            {
-                string secondaryCurrency = "MyObjectBuilder_PhysicalObject/SpaceCredit";
-                MoveFromBank(ItemTypes[secondaryCurrency], (int)(leftoverCash / ItemValues[secondaryCurrency]));
-            }
-            PersonalCreditCount = 0;
-        }
-        void ResetCounts()
-        {
+            DigitalBalance = 0;
+            SelectedItemType = BCKey;
             Echo("Resetting Item Counts...");
             ItemValues.Clear();
             ItemCounts.Clear();
+            InputInventoryItems.Clear();
             foreach (var item in ItemNames)
             {
                 ItemCounts.Add(item.Key, 1);
@@ -537,28 +597,9 @@ namespace IngameScript
             else if (target == PersonalCargoKey)
             {
                 Echo("Processing Input Block...");
-                PersonalCreditCount = 0;
-                Echo("Searching for block with name " + target + "...");
-                IMyTerminalBlock inputBlock = GridTerminalSystem.GetBlockWithName(target);
-                if (inputBlock == null && inputBlock.InventoryCount > 0)
+                if (InputInventoryItems.Count == 0)
                 {
-                    Echo("Block " + target + " Found.");
-                    InputInventory = inputBlock.GetInventory(0);
-                }
-                Echo("Populating List InputInventoryItems...");
-                InputInventory.GetItems(InputInventoryItems);
-                Echo("Populating List Complete. Number of items: " + InputInventoryItems.Count);
-                foreach (MyInventoryItem item in InputInventoryItems)
-                {
-                    Echo("Item: " + ItemNames[item.Type.ToString()] + ", Count: " + item.Amount.ToIntSafe());
-                    if (item.Type.ToString() == BCKey)
-                    {
-                        if (MainCurrency != item.Type)
-                        {
-                            MainCurrency = item.Type;
-                        }
-                        PersonalCreditCount += item.Amount.ToIntSafe();
-                    }
+                    InputInventory.GetItems(InputInventoryItems);
                 }
             }
             Echo("Processing Complete.");
@@ -571,13 +612,17 @@ namespace IngameScript
             inventory.GetItems(inventoryItems);
             foreach (MyInventoryItem item in inventoryItems)
             {
-                 string key = item.Type.ToString();
-                 int value = item.Amount.ToIntSafe();
-                 if (key == BCKey)
-                 {
-                      MainCurrency = item.Type;
-                 }
-                 if (ItemNames.ContainsKey(key))
+                string key = item.Type.ToString();
+                if (key == SelectedItemType && SelectedStock != item.Type)
+                {
+                    SelectedStock = item.Type;
+                }
+                int value = item.Amount.ToIntSafe();
+                if (key == BCKey)
+                {
+                    MainCurrency = item.Type;
+                }
+                if (ItemNames.ContainsKey(key))
                 {
                     if (!ItemTypes.ContainsKey(key))
                     {
@@ -596,6 +641,6 @@ namespace IngameScript
             Echo($"Scan complete. Number of unique items found: {scannedItems.Count}");
             return scannedItems;
         }
-#endregion
+        #endregion
     }
 }
