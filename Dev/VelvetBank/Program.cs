@@ -356,7 +356,25 @@ namespace IngameScript
 
 
             }
-            for (int i = 0; i < InfoDisplays.Count; i++){}
+            for (int i = 0; i < InfoDisplays.Count; i++)
+            {                
+                Echo("Rendering Buy Menu Screen");
+                Dictionary<string, int> wallet = new Dictionary<string, int>(InventoryItemCounts(InputInventoryItems));
+                string[] rows = new string[wallet.Count];
+                int index = 0;
+                foreach (var item in wallet)
+                {
+                    string key = item.Key;
+                    rows[index] = $"{item.Value}x {ItemNames[key]} = {(ItemValues[key]) * item.Value}\n";
+                    index++;
+                }
+                InfoTexts[i] += "[1] = sell; [2] = refresh;\n";
+                foreach (string row in rows)
+                {
+                    InfoTexts[i] += row;
+                }
+                InfoDisplays[i].WriteText(InfoTexts[i]);
+            }
 
 
         }
